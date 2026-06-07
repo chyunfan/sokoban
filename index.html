@@ -1,0 +1,634 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>推箱子</title>
+<style>
+* { margin:0; padding:0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+  background: #1a1a2e;
+  color: #eee;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-height: 100vh;
+  overflow: hidden;
+}
+#nickname-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  width: 100%;
+  padding: 20px;
+}
+#nickname-screen h1 { font-size: 28px; margin-bottom: 10px; color: #e94560; }
+#nickname-screen p { font-size: 14px; color: #aaa; margin-bottom: 30px; }
+#nickname-input {
+  width: 80%; max-width: 300px;
+  padding: 12px 16px; font-size: 18px;
+  border: 2px solid #e94560; border-radius: 8px;
+  background: #16213e; color: #fff; outline: none; text-align: center;
+}
+#nickname-input::placeholder { color: #666; }
+#start-btn {
+  margin-top: 20px; padding: 12px 60px; font-size: 18px;
+  background: #e94560; color: #fff; border: none; border-radius: 8px; cursor: pointer;
+}
+#start-btn:active { background: #c73652; }
+
+#game-screen { display: none; flex-direction: column; align-items: center; width: 100%; height: 100vh; }
+
+.header {
+  width: 100%; padding: 8px 16px; background: #16213e;
+  display: flex; justify-content: space-between; align-items: center; font-size: 14px;
+}
+.header .level { color: #e94560; font-weight: bold; }
+.header .info { color: #aaa; }
+.header .info span { color: #0f3460; font-weight: bold; }
+
+#game-canvas { margin-top: 10px; border-radius: 8px; background: #0f3460; }
+
+.controls { margin-top: 16px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.ctrl-row { display: flex; gap: 6px; }
+.ctrl-btn {
+  width: 64px; height: 64px; font-size: 28px;
+  background: #16213e; color: #e94560;
+  border: 2px solid #e94560; border-radius: 12px;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  user-select: none; -webkit-tap-highlight-color: transparent;
+}
+.ctrl-btn:active { background: #e94560; color: #fff; }
+
+.action-btns { margin-top: 10px; display: flex; gap: 12px; }
+.action-btn {
+  padding: 8px 20px; font-size: 14px;
+  background: #16213e; color: #aaa; border: 1px solid #333; border-radius: 6px; cursor: pointer;
+}
+.action-btn:active { background: #e94560; color: #fff; }
+
+.modal-mask {
+  display: none; position: fixed; top:0; left:0; right:0; bottom:0;
+  background: rgba(0,0,0,0.7); z-index: 100;
+  justify-content: center; align-items: center;
+}
+.modal-mask.show { display: flex; }
+.modal {
+  background: #16213e; border-radius: 12px; padding: 24px;
+  width: 90%; max-width: 360px; max-height: 80vh; overflow-y: auto;
+}
+.modal h2 { text-align: center; color: #e94560; margin-bottom: 16px; font-size: 20px; }
+.modal .score-result { text-align: center; margin-bottom: 16px; }
+.modal .score-result .num { font-size: 36px; color: #e94560; font-weight: bold; }
+.modal table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.modal th { background: #0f3460; padding: 8px 4px; color: #e94560; }
+.modal td { padding: 8px 4px; text-align: center; border-bottom: 1px solid #0f3460; }
+.modal td:first-child { color: #e94560; font-weight: bold; }
+.modal .my-rank { background: rgba(233,69,96,0.15); }
+.modal-btns { margin-top: 16px; display: flex; gap: 10px; justify-content: center; }
+.modal-btn { padding: 10px 24px; border-radius: 8px; border: none; font-size: 15px; cursor: pointer; }
+.modal-btn.primary { background: #e94560; color: #fff; }
+.modal-btn.secondary { background: #0f3460; color: #aaa; }
+</style>
+</head>
+<body>
+
+<div id="nickname-screen">
+  <h1>📦 推箱子</h1>
+  <p>输入昵称，开始挑战</p>
+  <input id="nickname-input" type="text" placeholder="请输入昵称" maxlength="10">
+  <button id="start-btn" onclick="startGame()">开始游戏</button>
+</div>
+
+<div id="game-screen">
+  <div class="header">
+    <div class="level" id="level-text">第 1 关</div>
+    <div class="info">步数: <span id="move-count">0</span>　得分: <span id="score-text">0</span></div>
+  </div>
+  <canvas id="game-canvas"></canvas>
+  <div class="controls">
+    <div class="ctrl-row">
+      <button class="ctrl-btn" onmousedown="move('up')" ontouchstart="move('up')">⬆</button>
+    </div>
+    <div class="ctrl-row">
+      <button class="ctrl-btn" onmousedown="move('left')" ontouchstart="move('left')">⬅</button>
+      <button class="ctrl-btn" onmousedown="move('down')" ontouchstart="move('down')">⬇</button>
+      <button class="ctrl-btn" onmousedown="move('right')" ontouchstart="move('right')">➡</button>
+    </div>
+  </div>
+  <div class="action-btns">
+    <button class="action-btn" onclick="undo()">撤销</button>
+    <button class="action-btn" onclick="resetLevel()">重置</button>
+    <button class="action-btn" onclick="finishGame()">结束游戏</button>
+    <button class="action-btn" onclick="showRanking()">排行榜</button>
+  </div>
+</div>
+
+<div class="modal-mask" id="result-modal">
+  <div class="modal">
+    <h2 id="result-title">🎉 游戏结束！</h2>
+    <div class="score-result">
+      <div>总得分</div>
+      <div class="num" id="result-score">0</div>
+      <div style="margin-top:8px;color:#aaa;font-size:13px;" id="result-detail"></div>
+    </div>
+    <h2 style="font-size:16px;margin-top:20px;">🏆 排行榜 Top 10</h2>
+    <table>
+      <thead><tr><th>排名</th><th>昵称</th><th>得分</th><th>关数</th></tr></thead>
+      <tbody id="result-tbody"></tbody>
+    </table>
+    <div class="modal-btns">
+      <button class="modal-btn primary" onclick="restartGame()">再玩一次</button>
+      <button class="modal-btn secondary" onclick="closeModal('result-modal')">关闭</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-mask" id="ranking-modal">
+  <div class="modal">
+    <h2>🏆 排行榜 Top 10</h2>
+    <table>
+      <thead><tr><th>排名</th><th>昵称</th><th>得分</th><th>关数</th></tr></thead>
+      <tbody id="ranking-tbody"></tbody>
+    </table>
+    <div class="modal-btns">
+      <button class="modal-btn secondary" onclick="closeModal('ranking-modal')">关闭</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ===== 关卡数据（5关，逐步递增难度）=====
+const LEVELS = [
+  { // 第1关 入门 5x5  1个箱子
+    map: [
+      "#####",
+      "# . #",
+      "# $@#",
+      "#   #",
+      "#####"
+    ]
+  },
+  { // 第2关 6x6  2个箱子
+    map: [
+      " ######",
+      "  #    #",
+      "  # $$ #",
+      "  #  ..#",
+      "  #  @ #",
+      "  ######"
+    ]
+  },
+  { // 第3关 7x7  3个箱子
+    map: [
+      "#######",
+      "#      #",
+      "# $$$  #",
+      "# ...  #",
+      "#      #",
+      "#  @   #",
+      "#######"
+    ]
+  },
+  { // 第4关 8x8  4个箱子，有墙障碍
+    map: [
+      "########",
+      "#      #  #",
+      "# $$$$ #  #",
+      "# .#.  #  #",
+      "#      #  #",
+      "##       #",
+      " #  @    #",
+      " ########"
+    ]
+  },
+  { // 第5关 8x8  4个箱子，复杂地形
+    map: [
+      "  ####  ",
+      "  #    #",
+      "  # $$$#",
+      "  # #..#",
+      "  #      ",
+      "  ###  @#",
+      "     ####  ",
+      "          "
+    ]
+  }
+];
+
+// ===== 游戏状态 =====
+let currentLevel = 0;
+let mapData = [];
+let playerPos = { x:0, y:0 };
+let moveCount = 0;
+let totalMoves = 0;
+let totalScore = 0;
+let history = [];
+let gameFinished = false;
+let userId = '';
+let nickname = '';
+
+// ===== Canvas =====
+const canvas = document.getElementById('game-canvas');
+const ctx = canvas.getContext('2d');
+let TILE = 48;
+
+// ===== 常量 =====
+const WALL = '#';
+const FLOOR = ' ';
+const BOX = '$';
+const TARGET = '.';
+const PLAYER = '@';
+const BOX_OK = '*';
+const PLAYER_T = '+';
+
+const COLORS = {
+  wall: '#2c3e50',
+  floor: '#1a1a2e',
+  target: 'rgba(233,69,96,0.35)',
+  box: '#e67e22',
+  boxOk: '#2ecc71',
+  player: '#e94560',
+  targetDot: '#e94560'
+};
+
+// ===== 初始化 =====
+function startGame() {
+  const input = document.getElementById('nickname-input');
+  nickname = input.value.trim() || '匿名玩家';
+  userId = localStorage.getItem('sokoban_userid');
+  if (!userId) {
+    userId = 'wx_' + Math.random().toString(36).substring(2, 10);
+    localStorage.setItem('sokoban_userid', userId);
+  }
+  document.getElementById('nickname-screen').style.display = 'none';
+  document.getElementById('game-screen').style.display = 'flex';
+  currentLevel = 0;
+  totalScore = 0;
+  totalMoves = 0;
+  loadLevel(currentLevel);
+}
+
+// ===== 加载关卡 =====
+function loadLevel(idx) {
+  if (idx >= LEVELS.length) { finishGame(); return; }
+  const level = LEVELS[idx];
+  mapData = level.map.map(row => row.split(''));
+  for (let y = 0; y < mapData.length; y++) {
+    for (let x = 0; x < mapData[y].length; x++) {
+      if (mapData[y][x] === PLAYER || mapData[y][x] === PLAYER_T) {
+        playerPos = { x, y };
+        mapData[y][x] = mapData[y][x] === PLAYER ? FLOOR : TARGET;
+      }
+    }
+  }
+  moveCount = 0;
+  history = [];
+  gameFinished = false;
+  document.getElementById('level-text').textContent = `第 ${idx + 1} 关 / 共 ${LEVELS.length} 关`;
+  document.getElementById('move-count').textContent = '0';
+  resizeCanvas();
+  render();
+}
+
+// ===== Canvas 自适应 =====
+function resizeCanvas() {
+  const maxW = Math.min(window.innerWidth - 32, 500);
+  const mapH = mapData.length;
+  const mapW = Math.max(...mapData.map(r => r.length));
+  TILE = Math.max(1, Math.floor(maxW / mapW));
+  canvas.width = mapW * TILE;
+  canvas.height = mapH * TILE;
+}
+
+// ===== 渲染 =====
+function render() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const mapH = mapData.length;
+  const mapW = Math.max(...mapData.map(r => r.length));
+  for (let y = 0; y < mapH; y++) {
+    for (let x = 0; x < (mapData[y] ? mapData[y].length : 0); x++) {
+      const ch = mapData[y][x];
+      const px = x * TILE;
+      const py = y * TILE;
+      // 地板
+      ctx.fillStyle = COLORS.floor;
+      ctx.fillRect(px, py, TILE, TILE);
+      // 墙
+      if (ch === WALL) {
+        ctx.fillStyle = COLORS.wall;
+        ctx.fillRect(px, py, TILE, TILE);
+        ctx.fillStyle = 'rgba(255,255,255,0.05)';
+        ctx.fillRect(px + 2, py + 2, TILE - 4, TILE - 4);
+      }
+      // 目标点底色
+      if (ch === TARGET || ch === BOX_OK || ch === PLAYER_T) {
+        ctx.fillStyle = COLORS.target;
+        ctx.beginPath();
+        ctx.arc(px + TILE/2, py + TILE/2, TILE/3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // 箱子
+      if (ch === BOX) {
+        ctx.fillStyle = COLORS.box;
+        roundRect(px + 3, py + 3, TILE - 6, TILE - 6, 5);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(px + 12, py + 12); ctx.lineTo(px + TILE - 12, py + TILE - 12);
+        ctx.moveTo(px + TILE - 12, py + 12); ctx.lineTo(px + 12, py + TILE - 12);
+        ctx.stroke();
+      }
+      // 箱子到位
+      if (ch === BOX_OK) {
+        ctx.fillStyle = COLORS.boxOk;
+        roundRect(px + 3, py + 3, TILE - 6, TILE - 6, 5);
+        ctx.fill();
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(px + 14, py + TILE/2);
+        ctx.lineTo(px + TILE/2, py + TILE - 14);
+        ctx.lineTo(px + TILE - 14, py + 14);
+        ctx.stroke();
+      }
+    }
+  }
+  // 画玩家（双手向前推的小人，缩小到格子的55%）
+  const px = playerPos.x * TILE;
+  const py = playerPos.y * TILE;
+  const cx = px + TILE / 2;
+  const cy = py + TILE / 2;
+  const r = Math.max(8, TILE * 0.26);
+
+  ctx.fillStyle = COLORS.player;
+  // 身体（椭圆，略宽）
+  ctx.beginPath();
+  ctx.ellipse(cx, cy + r * 0.15, r * 0.55, r * 0.45, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 头（圆形，偏上）
+  ctx.beginPath();
+  ctx.arc(cx, cy - r * 0.38, r * 0.42, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 眼睛（白色小圆）
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.arc(cx - r * 0.13, cy - r * 0.42, Math.max(1.5, r * 0.13), 0, Math.PI * 2);
+  ctx.arc(cx + r * 0.13, cy - r * 0.42, Math.max(1.5, r * 0.13), 0, Math.PI * 2);
+  ctx.fill();
+
+  // 嘴巴（微笑弧线）
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = Math.max(1, r * 0.09);
+  ctx.beginPath();
+  ctx.arc(cx, cy - r * 0.28, r * 0.18, 0.2, Math.PI - 0.2);
+  ctx.stroke();
+
+  // 双腿
+  ctx.strokeStyle = COLORS.player;
+  ctx.lineWidth = Math.max(2, TILE / 12);
+  ctx.beginPath();
+  ctx.moveTo(cx - r * 0.18, cy + r * 0.42);
+  ctx.lineTo(cx - r * 0.28, cy + r * 0.82);
+  ctx.moveTo(cx + r * 0.18, cy + r * 0.42);
+  ctx.lineTo(cx + r * 0.28, cy + r * 0.82);
+  ctx.stroke();
+
+  // 左臂向前推
+  ctx.lineWidth = Math.max(2, TILE / 12);
+  ctx.strokeStyle = COLORS.player;
+  ctx.beginPath();
+  ctx.moveTo(cx - r * 0.22, cy - r * 0.08);
+  ctx.lineTo(cx - r * 0.45, cy - r * 0.32);
+  ctx.lineTo(cx - r * 0.62, cy - r * 0.18);
+  ctx.stroke();
+  // 左手掌
+  ctx.fillStyle = COLORS.player;
+  ctx.beginPath();
+  ctx.arc(cx - r * 0.62, cy - r * 0.18, Math.max(2, TILE / 14), 0, Math.PI * 2);
+  ctx.fill();
+
+  // 右臂向前推
+  ctx.strokeStyle = COLORS.player;
+  ctx.lineWidth = Math.max(2, TILE / 12);
+  ctx.beginPath();
+  ctx.moveTo(cx + r * 0.22, cy - r * 0.08);
+  ctx.lineTo(cx + r * 0.45, cy - r * 0.32);
+  ctx.lineTo(cx + r * 0.62, cy - r * 0.18);
+  ctx.stroke();
+  // 右手掌
+  ctx.fillStyle = COLORS.player;
+  ctx.beginPath();
+  ctx.arc(cx + r * 0.62, cy - r * 0.18, Math.max(2, TILE / 14), 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function roundRect(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+// ===== 移动逻辑 =====
+function move(dir) {
+  if (gameFinished) return;
+  const dx = dir === 'left' ? -1 : dir === 'right' ? 1 : 0;
+  const dy = dir === 'up' ? -1 : dir === 'down' ? 1 : 0;
+  const nx = playerPos.x + dx;
+  const ny = playerPos.y + dy;
+  if (!inBounds(nx, ny)) return;
+  const target = getCell(nx, ny);
+  if (target === WALL) return;
+  // 空地或目标点，直接走
+  if (target === FLOOR || target === TARGET) {
+    saveHistory();
+    playerPos = { x: nx, y: ny };
+    moveCount++;
+    totalMoves++;
+    updateUI();
+    render();
+    return;
+  }
+  // 推箱子
+  if (target === BOX || target === BOX_OK) {
+    const bx = nx + dx;
+    const by = ny + dy;
+    if (!inBounds(bx, by)) return;
+    const behind = getCell(bx, by);
+    if (behind === FLOOR || behind === TARGET) {
+      saveHistory();
+      setCell(bx, by, target === BOX_OK ? BOX_OK : BOX);
+      setCell(nx, ny, target === BOX_OK ? TARGET : FLOOR);
+      playerPos = { x: nx, y: ny };
+      moveCount++;
+      totalMoves++;
+      updateUI();
+      render();
+      if (checkWin()) onLevelComplete();
+    }
+  }
+}
+
+function inBounds(x, y) {
+  return y >= 0 && y < mapData.length && x >= 0 && mapData[y] && x < mapData[y].length;
+}
+function getCell(x, y) { return (mapData[y] && mapData[y][x]) || FLOOR; }
+function setCell(x, y, val) {
+  if (mapData[y]) {
+    while (mapData[y].length <= x) mapData[y].push(FLOOR);
+    mapData[y][x] = val;
+  }
+}
+function updateUI() { document.getElementById('move-count').textContent = moveCount; }
+
+// ===== 撤销 =====
+function saveHistory() {
+  history.push({
+    map: mapData.map(r => [...r]),
+    playerPos: { ...playerPos },
+    moveCount,
+    totalMoves
+  });
+  if (history.length > 80) history.shift();
+}
+function undo() {
+  if (gameFinished || !history.length) return;
+  const s = history.pop();
+  mapData = s.map;
+  playerPos = s.playerPos;
+  moveCount = s.moveCount;
+  totalMoves = s.totalMoves;
+  updateUI();
+  render();
+}
+function resetLevel() { if (!gameFinished) loadLevel(currentLevel); }
+
+// ===== 检查通关 =====
+function checkWin() {
+  for (let y = 0; y < mapData.length; y++)
+    for (let x = 0; x < mapData[y].length; x++)
+      if (mapData[y][x] === BOX) return false;
+  return true;
+}
+
+// ===== 关卡完成 =====
+function onLevelComplete() {
+  const levelScore = Math.max(0, 1000 - moveCount * 10);
+  totalScore += levelScore;
+  document.getElementById('score-text').textContent = totalScore;
+  if (currentLevel + 1 >= LEVELS.length) {
+    setTimeout(() => finishGame(), 600);
+  } else {
+    setTimeout(() => { currentLevel++; loadLevel(currentLevel); }, 600);
+  }
+}
+
+// ===== 游戏结束 =====
+async function finishGame() {
+  gameFinished = true;
+  try {
+    await fetch('/api/submit-score', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        openid: userId,
+        nickname: nickname,
+        score: totalScore,
+        levels_cleared: currentLevel + 1,
+        total_moves: totalMoves
+      })
+    });
+  } catch(e) { console.error('submit error', e); }
+  document.getElementById('result-score').textContent = totalScore;
+  document.getElementById('result-detail').textContent =
+    `通关 ${currentLevel + 1} 关　总步数 ${totalMoves}`;
+  await loadRankingTo('result-tbody', true);
+  document.getElementById('result-modal').classList.add('show');
+}
+
+// ===== 排行榜 =====
+async function showRanking() {
+  await loadRankingTo('ranking-tbody', false);
+  document.getElementById('ranking-modal').classList.add('show');
+}
+
+async function loadRankingTo(tbodyId, highlightMy) {
+  const tbody = document.getElementById(tbodyId);
+  tbody.innerHTML = '<tr><td colspan="4">加载中...</td></tr>';
+  try {
+    const res = await fetch('/api/ranking');
+    const json = await res.json();
+    const data = json.data || [];
+    if (!data.length) {
+      tbody.innerHTML = '<tr><td colspan="4" style="color:#666;">暂无排行数据</td></tr>';
+      return;
+    }
+    tbody.innerHTML = data.map((item, i) => {
+      const isMe = item.nickname === nickname;
+      const cls = isMe && highlightMy ? ' class="my-rank"' : '';
+      const medal = i===0 ? '🥇' : i===1 ? '🥈' : i===2 ? '🥉' : (i+1);
+      return `<tr${cls}><td>${medal}</td><td>${escHtml(item.nickname)}</td><td>${item.score}</td><td>${item.levels_cleared}</td></tr>`;
+    }).join('');
+  } catch(e) {
+    tbody.innerHTML = '<tr><td colspan="4" style="color:#e94560;">加载失败</td></tr>';
+  }
+}
+
+function escHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+function closeModal(id) { document.getElementById(id).classList.remove('show'); }
+function restartGame() {
+  closeModal('result-modal');
+  currentLevel = 0; totalScore = 0; totalMoves = 0;
+  document.getElementById('score-text').textContent = '0';
+  loadLevel(0);
+}
+
+// ===== 键盘控制 =====
+document.addEventListener('keydown', e => {
+  const map = { ArrowUp:'up', ArrowDown:'down', ArrowLeft:'left', ArrowRight:'right', w:'up', s:'down', a:'left', d:'right' };
+  if (map[e.key]) { e.preventDefault(); move(map[e.key]); }
+  if (e.key === 'z' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); undo(); }
+  if (e.key === 'r' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); resetLevel(); }
+});
+
+// ===== 触摸手势 =====
+let touchStartX = 0, touchStartY = 0;
+canvas.addEventListener('touchstart', e => {
+  touchStartX = e.touches[0].clientX;
+  touchStartY = e.touches[0].clientY;
+}, { passive: true });
+canvas.addEventListener('touchend', e => {
+  const dx = e.changedTouches[0].clientX - touchStartX;
+  const dy = e.changedTouches[0].clientY - touchStartY;
+  if (Math.max(Math.abs(dx), Math.abs(dy)) < 20) return;
+  if (Math.abs(dx) > Math.abs(dy)) move(dx > 0 ? 'right' : 'left');
+  else move(dy > 0 ? 'down' : 'up');
+}, { passive: true });
+
+// ===== 窗口 resize =====
+window.addEventListener('resize', () => {
+  if (document.getElementById('game-screen').style.display === 'flex') {
+    resizeCanvas(); render();
+  }
+});
+</script>
+</body>
+</html>
