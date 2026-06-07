@@ -27,7 +27,7 @@ module.exports = async (req, res) => {
       return res.status(500).json({ error: '查询失败' });
     }
 
-    res.status(200).json({ success: true, data: data || [] });
+    res.status(200).json({ data: data || [] });
   } catch (err) {
     console.error('ranking error:', err);
     res.status(500).json({ error: '服务器错误' });

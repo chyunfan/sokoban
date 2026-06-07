@@ -41,7 +41,7 @@ module.exports = async (req, res) => {
       .from('sokoban_scores')
       .upsert({
         openid,
-        nickname: nickname.substring(0, 20), // 限制长度
+        nickname: nickname.substring(0, 20),
         score: newScore,
         levels_cleared: newLevels,
         total_moves: newMoves,
