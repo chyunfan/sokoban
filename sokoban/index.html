@@ -160,6 +160,14 @@ body {
   </div>
 </div>
 
+<!-- 过关提示 -->
+<div id="level-toast" style="
+  display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
+  background:rgba(46,204,113,0.95); color:#fff; font-size:22px; font-weight:bold;
+  padding:18px 36px; border-radius:12px; z-index:200; text-align:center;
+  box-shadow:0 4px 24px rgba(0,0,0,0.4);
+"></div>
+
 <script>
 // ===== 关卡数据（5关，逐步递增难度）=====
 const LEVELS = [
@@ -471,7 +479,9 @@ function move(dir) {
     const behind = getCell(bx, by);
     if (behind === FLOOR || behind === TARGET) {
       saveHistory();
-      setCell(bx, by, target === BOX_OK ? BOX_OK : BOX);
+      // 关键修复：箱子推到目标点上应变为 BOX_OK(*)，否则为 BOX($)
+      setCell(bx, by, behind === TARGET ? BOX_OK : BOX);
+      // 箱子离开的位置：原来是 on-target 则恢复为 TARGET，否则为 FLOOR
       setCell(nx, ny, target === BOX_OK ? TARGET : FLOOR);
       playerPos = { x: nx, y: ny };
       moveCount++;
@@ -530,16 +540,37 @@ function onLevelComplete() {
   const levelScore = Math.max(0, 1000 - moveCount * 10);
   totalScore += levelScore;
   document.getElementById('score-text').textContent = totalScore;
-  if (currentLevel + 1 >= LEVELS.length) {
-    setTimeout(() => finishGame(), 600);
+
+  // 显示过关 Toast
+  const toast = document.getElementById('level-toast');
+  const isLast = (currentLevel + 1 >= LEVELS.length);
+  toast.textContent = isLast
+    ? `🎉 全部通关！总分 +${levelScore}`
+    : `🎉 第 ${currentLevel + 1} 关通过！+${levelScore} 分`;
+  toast.style.display = 'block';
+  toast.style.opacity = '1';
+
+  if (isLast) {
+    // 最后一关，1.5秒后进入结束流程
+    setTimeout(() => {
+      toast.style.opacity = '0';
+      // 淡出动画结束后彻底隐藏
+      setTimeout(() => { toast.style.display = 'none'; finishGame(); }, 400);
+    }, 1500);
   } else {
-    setTimeout(() => { currentLevel++; loadLevel(currentLevel); }, 600);
+    // 不是最后一关，1.5秒后进入下一关
+    setTimeout(() => {
+      toast.style.opacity = '0';
+      setTimeout(() => { toast.style.display = 'none'; currentLevel++; loadLevel(currentLevel); }, 400);
+    }, 1500);
   }
 }
 
 // ===== 游戏结束 =====
 async function finishGame() {
   gameFinished = true;
+  // 隐藏过关 Toast
+  document.getElementById('level-toast').style.display = 'none';
   try {
     await fetch('/api/submit-score', {
       method: 'POST',
@@ -595,6 +626,7 @@ function escHtml(s) {
 }
 function closeModal(id) { document.getElementById(id).classList.remove('show'); }
 function restartGame() {
+  document.getElementById('level-toast').style.display = 'none';
   closeModal('result-modal');
   currentLevel = 0; totalScore = 0; totalMoves = 0;
   document.getElementById('score-text').textContent = '0';
