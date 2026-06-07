@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <title>推箱子</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <style>
 * { margin:0; padding:0; box-sizing: border-box; }
 body {
@@ -263,8 +264,25 @@ const COLORS = {
   targetDot: '#e94560'
 };
 
+// ===== Supabase（从 Vercel API 获取配置，不硬编码密钥） =====
+let supabaseClient = null;
+
+async function initSupabase() {
+  if (supabaseClient) return supabaseClient;
+  try {
+    const res = await fetch('/api/config');
+    const cfg = await res.json();
+    supabaseClient = supabase.createClient(cfg.url, cfg.key);
+    return supabaseClient;
+  } catch(e) {
+    console.error('Supabase 初始化失败', e);
+    return null;
+  }
+}
+
 // ===== 初始化 =====
-function startGame() {
+async function startGame() {
+  await initSupabase();
   const input = document.getElementById('nickname-input');
   nickname = input.value.trim() || '匿名玩家';
   userId = localStorage.getItem('sokoban_userid');
@@ -571,18 +589,16 @@ async function finishGame() {
   gameFinished = true;
   // 隐藏过关 Toast
   document.getElementById('level-toast').style.display = 'none';
+  // 提交分数到 Supabase
   try {
-    await fetch('/api/submit-score', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        openid: userId,
-        nickname: nickname,
-        score: totalScore,
-        levels_cleared: currentLevel + 1,
-        total_moves: totalMoves
-      })
-    });
+    await supabaseClient.from('sokoban_scores').upsert({
+      openid: userId,
+      nickname: nickname.substring(0, 20),
+      score: totalScore,
+      levels_cleared: currentLevel + 1,
+      total_moves: totalMoves,
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'openid' });
   } catch(e) { console.error('submit error', e); }
   document.getElementById('result-score').textContent = totalScore;
   document.getElementById('result-detail').textContent =
@@ -601,10 +617,14 @@ async function loadRankingTo(tbodyId, highlightMy) {
   const tbody = document.getElementById(tbodyId);
   tbody.innerHTML = '<tr><td colspan="4">加载中...</td></tr>';
   try {
-    const res = await fetch('/api/ranking');
-    const json = await res.json();
-    const data = json.data || [];
-    if (!data.length) {
+    const { data, error } = await supabaseClient
+      .from('sokoban_scores')
+      .select('nickname, score, levels_cleared, total_moves')
+      .order('score', { ascending: false })
+      .order('total_moves', { ascending: true })
+      .limit(10);
+    if (error) throw error;
+    if (!data || !data.length) {
       tbody.innerHTML = '<tr><td colspan="4" style="color:#666;">暂无排行数据</td></tr>';
       return;
     }
@@ -616,7 +636,7 @@ async function loadRankingTo(tbodyId, highlightMy) {
     }).join('');
   } catch(e) {
     console.error('ranking error:', e);
-    tbody.innerHTML = '<tr><td colspan="4" style="color:#e94560;">加载失败</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="4" style="color:#e94560;">加载失败: ' + escHtml(e.message) + '</td></tr>';
   }
 }
 
