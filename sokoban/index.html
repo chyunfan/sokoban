@@ -271,11 +271,19 @@ async function initSupabase() {
   if (supabaseClient) return supabaseClient;
   try {
     const res = await fetch('/api/config');
+    if (!res.ok) {
+      console.error('API 返回状态码:', res.status);
+      return null;
+    }
     const cfg = await res.json();
+    if (!cfg.url || !cfg.key) {
+      console.error('API 返回数据缺少 url 或 key:', cfg);
+      return null;
+    }
     supabaseClient = supabase.createClient(cfg.url, cfg.key);
     return supabaseClient;
   } catch(e) {
-    console.error('Supabase 初始化失败', e);
+    console.error('Supabase 初始化失败，请确认 api/config.js 已部署且环境变量已配置', e);
     return null;
   }
 }
@@ -590,16 +598,18 @@ async function finishGame() {
   // 隐藏过关 Toast
   document.getElementById('level-toast').style.display = 'none';
   // 提交分数到 Supabase
-  try {
-    await supabaseClient.from('sokoban_scores').upsert({
-      openid: userId,
-      nickname: nickname.substring(0, 20),
-      score: totalScore,
-      levels_cleared: currentLevel + 1,
-      total_moves: totalMoves,
-      updated_at: new Date().toISOString()
-    }, { onConflict: 'openid' });
-  } catch(e) { console.error('submit error', e); }
+  if (supabaseClient) {
+    try {
+      await supabaseClient.from('sokoban_scores').upsert({
+        openid: userId,
+        nickname: nickname.substring(0, 20),
+        score: totalScore,
+        levels_cleared: currentLevel + 1,
+        total_moves: totalMoves,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'openid' });
+    } catch(e) { console.error('submit error', e); }
+  }
   document.getElementById('result-score').textContent = totalScore;
   document.getElementById('result-detail').textContent =
     `通关 ${currentLevel + 1} 关　总步数 ${totalMoves}`;
@@ -616,6 +626,10 @@ async function showRanking() {
 async function loadRankingTo(tbodyId, highlightMy) {
   const tbody = document.getElementById(tbodyId);
   tbody.innerHTML = '<tr><td colspan="4">加载中...</td></tr>';
+  if (!supabaseClient) {
+    tbody.innerHTML = '<tr><td colspan="4" style="color:#e94560;">排行榜暂不可用（网络连接失败）</td></tr>';
+    return;
+  }
   try {
     const { data, error } = await supabaseClient
       .from('sokoban_scores')
