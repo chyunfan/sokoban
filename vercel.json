@@ -1,0 +1,21 @@
+{
+  "functions": {
+    "api/*.js": {
+      "runtime": "nodejs18.x"
+    }
+  },
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "/api/$1"
+    },
+    {
+      "src": "/sokoban/(.*)",
+      "dest": "/sokoban/$1"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/sokoban/$1"
+    }
+  ]
+}
