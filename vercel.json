@@ -1,21 +1,12 @@
 {
-  "functions": {
-    "api/*.js": {
-      "runtime": "nodejs18.x"
-    }
-  },
-  "routes": [
+  "rewrites": [
     {
-      "src": "/api/(.*)",
-      "dest": "/api/$1"
+      "source": "/api/(.*)",
+      "destination": "/api/$1"
     },
     {
-      "src": "/sokoban/(.*)",
-      "dest": "/sokoban/$1"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/sokoban/$1"
+      "source": "/(.*)",
+      "destination": "/sokoban/$1"
     }
   ]
 }
