@@ -4,7 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <title>推箱子</title>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <style>
 * { margin:0; padding:0; box-sizing: border-box; }
 body {
@@ -264,33 +263,44 @@ const COLORS = {
   targetDot: '#e94560'
 };
 
-// ===== Supabase（从 Vercel API 获取配置，不硬编码密钥） =====
-let supabaseClient = null;
+// ===== 排行榜（localStorage 本地存储） =====
+const RANKING_KEY = 'sokoban_ranking';
 
-async function initSupabase() {
-  if (supabaseClient) return supabaseClient;
+function getRanking() {
   try {
-    const res = await fetch('/api/config');
-    if (!res.ok) {
-      console.error('API 返回状态码:', res.status);
-      return null;
-    }
-    const cfg = await res.json();
-    if (!cfg.url || !cfg.key) {
-      console.error('API 返回数据缺少 url 或 key:', cfg);
-      return null;
-    }
-    supabaseClient = supabase.createClient(cfg.url, cfg.key);
-    return supabaseClient;
-  } catch(e) {
-    console.error('Supabase 初始化失败，请确认 api/config.js 已部署且环境变量已配置', e);
-    return null;
+    const raw = localStorage.getItem(RANKING_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch(e) { return []; }
+}
+
+function saveRanking() {
+  const list = getRanking();
+  // 查已有记录，只保留更高分
+  const idx = list.findIndex(r => r.openid === userId);
+  if (idx >= 0 && list[idx].score >= totalScore) return; // 没有更高分，不更新
+  const entry = {
+    openid: userId,
+    nickname: nickname.substring(0, 20),
+    score: totalScore,
+    levels_cleared: currentLevel + 1,
+    total_moves: totalMoves
+  };
+  if (idx >= 0) {
+    list[idx] = entry; // 更新
+  } else {
+    list.push(entry); // 新增
   }
+  localStorage.setItem(RANKING_KEY, JSON.stringify(list));
+}
+
+function getTop10() {
+  const list = getRanking();
+  list.sort((a, b) => b.score - a.score || a.total_moves - b.total_moves);
+  return list.slice(0, 10);
 }
 
 // ===== 初始化 =====
-async function startGame() {
-  await initSupabase();
+function startGame() {
   const input = document.getElementById('nickname-input');
   nickname = input.value.trim() || '匿名玩家';
   userId = localStorage.getItem('sokoban_userid');
@@ -593,65 +603,36 @@ function onLevelComplete() {
 }
 
 // ===== 游戏结束 =====
-async function finishGame() {
+function finishGame() {
   gameFinished = true;
-  // 隐藏过关 Toast
   document.getElementById('level-toast').style.display = 'none';
-  // 提交分数到 Supabase
-  if (supabaseClient) {
-    try {
-      await supabaseClient.from('sokoban_scores').upsert({
-        openid: userId,
-        nickname: nickname.substring(0, 20),
-        score: totalScore,
-        levels_cleared: currentLevel + 1,
-        total_moves: totalMoves,
-        updated_at: new Date().toISOString()
-      }, { onConflict: 'openid' });
-    } catch(e) { console.error('submit error', e); }
-  }
+  saveRanking(); // 写入 localStorage
   document.getElementById('result-score').textContent = totalScore;
   document.getElementById('result-detail').textContent =
     `通关 ${currentLevel + 1} 关　总步数 ${totalMoves}`;
-  await loadRankingTo('result-tbody', true);
+  loadRankingTo('result-tbody', true);
   document.getElementById('result-modal').classList.add('show');
 }
 
 // ===== 排行榜 =====
-async function showRanking() {
-  await loadRankingTo('ranking-tbody', false);
+function showRanking() {
+  loadRankingTo('ranking-tbody', false);
   document.getElementById('ranking-modal').classList.add('show');
 }
 
-async function loadRankingTo(tbodyId, highlightMy) {
+function loadRankingTo(tbodyId, highlightMy) {
   const tbody = document.getElementById(tbodyId);
-  tbody.innerHTML = '<tr><td colspan="4">加载中...</td></tr>';
-  if (!supabaseClient) {
-    tbody.innerHTML = '<tr><td colspan="4" style="color:#e94560;">排行榜暂不可用（网络连接失败）</td></tr>';
+  const data = getTop10();
+  if (!data.length) {
+    tbody.innerHTML = '<tr><td colspan="4" style="color:#666;">暂无排行数据，快去挑战吧！</td></tr>';
     return;
   }
-  try {
-    const { data, error } = await supabaseClient
-      .from('sokoban_scores')
-      .select('nickname, score, levels_cleared, total_moves')
-      .order('score', { ascending: false })
-      .order('total_moves', { ascending: true })
-      .limit(10);
-    if (error) throw error;
-    if (!data || !data.length) {
-      tbody.innerHTML = '<tr><td colspan="4" style="color:#666;">暂无排行数据</td></tr>';
-      return;
-    }
-    tbody.innerHTML = data.map((item, i) => {
-      const isMe = item.nickname === nickname;
-      const cls = isMe && highlightMy ? ' class="my-rank"' : '';
-      const medal = i===0 ? '🥇' : i===1 ? '🥈' : i===2 ? '🥉' : (i+1);
-      return `<tr${cls}><td>${medal}</td><td>${escHtml(item.nickname)}</td><td>${item.score}</td><td>${item.levels_cleared}</td></tr>`;
-    }).join('');
-  } catch(e) {
-    console.error('ranking error:', e);
-    tbody.innerHTML = '<tr><td colspan="4" style="color:#e94560;">加载失败: ' + escHtml(e.message) + '</td></tr>';
-  }
+  tbody.innerHTML = data.map((item, i) => {
+    const isMe = item.openid === userId;
+    const cls = isMe && highlightMy ? ' class="my-rank"' : '';
+    const medal = i===0 ? '🥇' : i===1 ? '🥈' : i===2 ? '🥉' : (i+1);
+    return `<tr${cls}><td>${medal}</td><td>${escHtml(item.nickname)}</td><td>${item.score}</td><td>${item.levels_cleared}</td></tr>`;
+  }).join('');
 }
 
 function escHtml(s) {
