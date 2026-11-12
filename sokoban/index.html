@@ -264,9 +264,14 @@ const COLORS = {
 };
 
 // ===== 排行榜 API =====
+// 页面通常通过 chyunfan.cn/sokoban/ 转发访问，而接口部署在本项目自己的域名下，
+// 所以必须用绝对地址（相对路径 /api/* 会被网关项目截走）。
+const API_ORIGIN = 'https://sokoban-three.vercel.app';
+const API_BASE = location.origin === API_ORIGIN ? '' : API_ORIGIN;
+
 async function submitScore() {
   try {
-    await fetch('/api/submit-score', {
+    const res = await fetch(API_BASE + '/api/submit-score', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -277,17 +282,24 @@ async function submitScore() {
         total_moves: totalMoves
       })
     });
+    if (!res.ok) console.error('submit failed', res.status);
   } catch(e) { console.error('submit error', e); }
 }
 
 async function getTop10() {
   try {
-    const res = await fetch('/api/ranking');
-    const json = await res.json();
-    return json.data || [];
+    const res = await fetch(API_BASE + '/api/ranking', { cache: 'no-store' });
+    const text = await res.text();
+    let json = null;
+    try { json = JSON.parse(text); } catch (e) { /* 非 JSON，说明被网关兜底页拦截 */ }
+    if (!res.ok || !json) {
+      console.error('ranking api 异常', res.status, text.slice(0, 120));
+      return { data: [], error: '排行榜接口异常（HTTP ' + res.status + '）' };
+    }
+    return { data: json.data || [], error: json.error || '' };
   } catch(e) {
     console.error('ranking fetch error', e);
-    return [];
+    return { data: [], error: '网络连接失败' };
   }
 }
 
@@ -615,9 +627,11 @@ async function showRanking() {
 async function loadRankingTo(tbodyId, highlightMy) {
   const tbody = document.getElementById(tbodyId);
   tbody.innerHTML = '<tr><td colspan="4">加载中...</td></tr>';
-  const data = await getTop10();
+  const { data, error } = await getTop10();
   if (!data.length) {
-    tbody.innerHTML = '<tr><td colspan="4" style="color:#666;">暂无排行数据，快去挑战吧！</td></tr>';
+    tbody.innerHTML = error
+      ? `<tr><td colspan="4" style="color:#e94560;">${escHtml(error)}</td></tr>`
+      : '<tr><td colspan="4" style="color:#666;">暂无排行数据，快去挑战吧！</td></tr>';
     return;
   }
   tbody.innerHTML = data.map((item, i) => {
