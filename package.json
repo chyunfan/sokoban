@@ -1,6 +1,5 @@
 {
   "private": true,
-  "dependencies": {
-    "@vercel/kv": "^2.0.0"
-  }
+  "name": "sokoban",
+  "version": "1.0.0"
 }
